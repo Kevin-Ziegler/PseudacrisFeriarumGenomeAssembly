@@ -8,7 +8,7 @@ A singular script to run our custom heterozygosity removal pipeline is in the Re
 A singular script to run our custom chicago scaffolding pipeline is within the ScaffoldChicago folder. To run navigate to the folder and type
 ./ScaffoldChicago.sh
 
-#Requirements
+# Requirements
 bash 
 python3
 python3 scipy package
