@@ -1,0 +1,240 @@
+#Canu Command
+
+no command
+
+non default options used:
+
+genomeSize=4.4g
+purgeOverlaps=aggressive
+corOutCoverage=200
+batOptions=-dg 3 -db 3 -dr 1 -ca 500 -cp 50
+
+#Run Busco
+#Pauper and 179 
+
+        For all busco runs replace inputFile with the input fasta and ouput with the directory of the results
+        1) conda activate BuscoEnv_5
+        2) /home/kdz14/miniconda3/envs/BuscoEnv_5/bin/busco -i inputFile -o output -m genome --cpu 32 -l /home/alanlemmonlab/Syteny_2_6_2024/BUSCO/tetrapoda_odb10
+
+        The canu busco is located in 
+
+#Run GenomeScope
+
+Jellyfish (v 2.3):
+Generate Hash Table:
+jellyfish count -m 21 -s 46000000000 -t 64 -C Illumina1.fasta … -o reads_All_21.jf
+
+Generate Histogram:
+jellyfish histo reads_All_21.jf > reads.histo
+
+upload this .histo file at http://genomescope.org/genomescope2.0/ to create plots
+
+
+#Run Purge Dups in /home/alanlemmonlab/PurgeContigs/PurgeDupsRun1/
+        nohup python3 /home/alanlemmonlab/PurgeContigs/purge_dups/scripts/run_purge_dups.py config.ChorusFrog.json /home/alanlemmonlab/PurgeContigs/purge_dups/src/ ChorusFrog -p bash > run1.out 2> run1.err &
+        The configuration file is at /home/alanlemmonlab/PurgeContigs/PurgeDupsRun1/config.ChorusFrog.json
+        cutoffs automatically chosen at 
+        5       21      35      42      70      126
+
+       
+
+#Run Busco
+
+
+
+#Remove Excess Heterozygosity
+#On Pauper in general in /home/alanlemmonlab/Scaffold_AidenLab/Mycode
+
+
+        #Run juicer 1-6
+        #On Pauper
+        /home/alanlemmonlab/Scaffold_AidenLab/juicer-1.6/CPU/juicer.sh -D /home/alanlemmonlab/Scaffold_AidenLab/juicer-1.6 -z /home/alanlemmonlab/Scaffold_AidenLab/juicer-1.6/references/P_fer_HeterozygousParameters.contigs.purged.fa -s MboI -y /home/alanlemmonlab/Scaffold_AidenLab/juicer-1.6/references/Pfer_juicer_MboI.txt -p assembly -S chimeric -t 128
+
+        #My Method
+        input is purge dups canu contigs along with alignments of HiC reads to contigs using juicer 1.6 
+        The method is comprised of multiple python files, and a grep command which can be run by configuring the /home/alanlemmonlab/Misc/ScriptsToUpload/RemoveHeterozygosity.sh script
+
+
+        The methodology does the following
+        1) filter only double mapped reads
+                juicer 1.6 splits folder grep ":XA:Z" the normal sam files
+                Some how get only doube mapped from multimapped, unclear how probably just grep -v ";tig" the multimapped files
+        2) Count All connections counts
+                CountDoubleMappedReads.py produces dictionary ListDictConnections.pickle
+        3) For regions above 3k connections create dictionary containing all hic reads
+                FindDoubleMappedContigs.py to produce dataCoords.pickle2
+        4) Create List of heterozygous contigs to remove
+                MultiMapRemove.py
+                Reads in dataCoords.pickle
+                filter out regions that don't span 20kb
+                filter out regions which don't cover 20% of the contig, only connections between points < 10kb count
+                Filter out outliers (if they are more than 6x the average distance from the median)
+                Write to a file ListOfRegionsToRemove_PurgeMultiMap.txt
+
+        5) RepurgeMM.py
+                rename and filter if 15kb from the end
+
+        6) With the list of contigs to remove, create a fasta file where they are actually removed
+                PurgeContigs_WithList.py        creates P_fer_HeterozygousParameters.contigs.purged_RepurgedMMSplit_4_2_2024.fasta
+
+
+#Run Busco
+
+#Run Juicer for Chicago
+#Pauper
+
+        #index fasta file
+        nohup bwa index P_fer_HeterozygousParameters.contigs.purged_RepurgedMMSplit_NoSpace_3_23_2024.fasta > index1.out 2> index1.err &
+
+        #Find Restriction Sites
+        /home/alanlemmonlab/Scaffold_AidenLab/juicer2/juicer/misc/generate_site_positions.py MboI Pfer_ChicagoMM P_fer_HeterozygousParameters.contigs.purged_RepurgedMMSplit_NoSpace_3_23_2024.fasta
+
+
+        #Run Juicer map chicago reads and filter them
+        nohup /home/alanlemmonlab/Scaffold_AidenLab/juicer2/juicer/CPU/juicer.sh -D /home/alanlemmonlab/Scaffold_AidenLab/juicer2/juicer -z /home/alanlemmonlab/Scaffold_AidenLab/juicer2/ChicagoMapping/P_fer_HeterozygousParameters.contigs.purged_RepurgedMMSplit_NoSpace_3_23_2024.fasta -s MboI -y /home/alanlemmonlab/Scaffold_AidenLab/juicer2/ChicagoMapping/restriction_sites/Pfer_ChicagoMM_MboI.txt -p assembly -t 128 > run2.out 2> run2.err &
+
+#Remove MultiMapped Chicago Reads
+        filter only multimapped reads with grep "XA:Z" merged_dedup.sam
+        Add multi mapped reads to dictionary DoubleMappedReadsDictionary.py MultiMappedReadsChicago.pickle
+        Create Merge_no_dups_old for juicer2 nohup /home/alanlemmonlab/Scaffold_AidenLab/juicer2/juicer/CPU/common/sam_to_mnd.sh /home/alanlemmonlab/Scaffold_AidenLab/juicer2/HiCMyChicagoScaffolds_Try2_4_10_2024/aligned/merged_dedup.sam 2> createmnd.err &
+        Remove multimapped reads from Merge_no_dups RemoveMultiMapFromNoDups.py
+
+
+#Run My Chicago Scaffolding
+        remove self alignment (not useful information)
+                awk '$2 != $6' CHI_merged_nodups_PurgedMM.txt > CHI_merged_nodups_PurgedMM_RemoveSelf.txt
+        filter out reads > 40k from the ends of contigs. No much "real" interaction happens past this range FilterChicagoReadsWhichDoNotMapToEnds.py
+                creates file CHI_merged_nodups_PurgedMM_RemoveSelf_Trimm40kb.txt
+        Count chicago connections between contigs (if both reads have a mapq score of 0 ignore)
+                CountConnectionsInNoDups.py produces dictionary CHI_purgedups_Trimmed_Connections.pickle
+        Store locations of Chicago connections in dictionary if # connections >= 8
+                NoDupsConnectionsGreaterThan10Positions.py produces CHI_purgedups_Trimmed_Connections_Locations.pickle
+        Create Chicago connections with ChicagoScaffolding_Connections.py
+                iterate through all connections
+                if there are >= 100 connections skip
+                orient if reads are on right or left side.
+                remove reads not mapping to the side the majority of reads are on
+                if <= 4 reads remain skip
+                calculate area of points with convex hull
+                if area is < 10 % of the possible area 40kb * 40kb skip
+                if a given contig has more than 2 connections blacklist it (not used in downstream analysis)
+                Produces connections file MyChicagoConnections.txt and blacklist dictionary ChicagoBlackListContigs.pickle
+        GroupMyChicagoConnections.py
+                Purge missed heterozygosity. PurgeContigs_WithList.py has a bug where if both sides should be purged sometimes only one side is purged. These contigs are removed now
+                Iterate through all connections assigning right and left member of each contig. If a contig is mapped to twice it is put on a double mapped list.
+                All members in the double mapped list have their connections removed
+                Take the remaining data structure and write all scaffolds to a file. Using the 3d-dna scaffolding key. Each line is a scaffold with the contig numbers, and if one is flipped add a -
+                Creates scaffolds file JuiceBoxMyChicagoScaffolds.assembly
+        Create fasta file from scaffolds file TransformScaffoldsIntoSequence.py
+                Add 500 Ns between the contigs of a scaffold
+                If the direction is "flipped" take its reverse compliment
+                If contigs have no connections they still each become a scaffold
+                Produces fasta file MyChicagoScaffolds_4_10_2024.fasta and key file MyChicagoScaffoldsKey_4_10_2024.txt
+
+
+
+#Run Juicer for HiC
+#Pauper in /home/alanlemmonlab/Scaffold_AidenLab/juicer2/HiCMyChicagoScaffolds_Try2_4_10_2024
+
+        #index fasta file
+        bwa index  MyChicagoScaffolds_4_10_2024.fasta > index1.out 2> index1.err
+        #Find Restriction Sites
+        /home/alanlemmonlab/Scaffold_AidenLab/juicer2/juicer/misc/generate_site_positions.py MboI Pfer_HICMyScaffolds MyChicagoScaffolds_4_10_2024.fasta > restriction.out 2> restriction.err
+
+        #Run Juicer map hic reads and filter them
+        /home/alanlemmonlab/Scaffold_AidenLab/juicer2/juicer/CPU/juicer.sh -D /home/alanlemmonlab/Scaffold_AidenLab/juicer2/juicer -z MyChicagoScaffolds_4_10_2024.fasta -s MboI -y Pfer_HICMyScaffolds_MboI.txt -p assembly -t 128 > run2.out 2> run2.err
+
+#Remove MultiMapped HiC Reads
+        1) Take juicer output merged_dedup.sam and filter reads with XA:Z to produce merged_dedup_Has_XAZ.sam
+                directory home/alanlemmonlab/Scaffold_AidenLab/juicer2/HiCMyChicagoScaffolds_Try2_4_10_2024/aligned/
+                nohup grep "XA:Z" merged_dedup.sam > merged_dedup_Has_XAZ.sam 2> filtermm.err &
+        2) Create dictionary of multi mapped reads
+                DoubleMappedReadsDictionary.py produces MultiMappedReadsHIC_4_10_2024.pickle
+        3) Create mnd from juicer2 (I think we do this because 3D-DNA has a formatting issue with the sam file, it needs the mnd file)
+                /home/alanlemmonlab/Scaffold_AidenLab/juicer2/juicer/CPU/common/sam_to_mnd.sh /home/alanlemmonlab/Scaffold_AidenLab/juicer2/HiCMyChicagoScaffolds_Try2_4_10_2024/aligned/merged_dedup.sam > nohup.out
+        4) Remove multi mapped reads from mnd
+                RemoveMultiMapFromNoDups.py produces /home/alanlemmonlab/Scaffold_AidenLab/juicer2/HiCMyChicagoScaffolds_Try2_4_10_2024/aligned/mnd_PurgeMM.txt
+
+
+#Run 3d-dna Scaffolding in /home/alanlemmonlab/Scaffold_AidenLab/juicer2/HiCMyChicagoScaffolds_Try2_4_10_2024/Scaffold3/
+        nohup /home/alanlemmonlab/Scaffold_AidenLab/3d-dna/run-asm-pipeline.sh --fast-start --editor-repeat-coverage 5 --editor-coarse-stringency 10 /home/alanlemmonlab/Scaffold_AidenLab/juicer2/HiCMyChicagoScaffolds_Try2_4_10_2024/MyChicagoScaffolds_4_10_2024.fasta /home/alanlemmonlab/Scaffold_AidenLab/juicer2/HiCMyChicagoScaffolds_Try2_4_10_2024/aligned/mnd_PurgeMM.txt > scaff2.out 2> scaff2.err &
+
+#Manual curation
+        Take the following intermediate 3d-dna files
+                /home/alanlemmonlab/Scaffold_AidenLab/juicer2/HiCMyChicagoScaffolds_Try2_4_10_2024/Scaffold3/MyChicagoScaffolds_4_10_2024.2.assembly
+                /home/alanlemmonlab/Scaffold_AidenLab/juicer2/HiCMyChicagoScaffolds_Try2_4_10_2024/Scaffold3/MyChicagoScaffolds_4_10_2024.2.hic
+        Open them in Juicebox and remove clear mis-joins
+        Create a new .hic file and a new .assembly file
+                On pauper /home/alanlemmonlab/Scaffold_AidenLab/juicer2/HiCMyChicagoScaffolds_Try2_4_10_2024/ManuallyCuratedFile/MyChicagoScaffolds_4_10_2024.2.review_ManuallyCurated_4_23_2024.assembly
+        #Create a new .fasta file from the .assembly file using /home/alanlemmonlab/Scaffold_AidenLab/3d-dna/run-asm-pipeline-post-review.sh
+                /home/alanlemmonlab/Scaffold_AidenLab/juicer2/HiCMyChicagoScaffolds_Try2_4_10_2024/Scaffold3/ManuallyCuratedFinalFasta/MyChicagoScaffolds_4_10_2024.FINAL.fasta
+
+#Run Arrow for Polishing
+#Pauper in general folder /home/alanlemmonlab/TryArrow3/
+
+        Index fasta
+        /home/alanlemmonlab/TryArrow2/myzip/pool2/PseudacrisFeriarumGenomeAssemblyKevin/PacBioSmartLink/smrtlink/install/smrtlink-release_11.0.0.146107/bundles/smrttools/current/private/pacbio/pbmm2/binwrap/pbmm2 index -j 64 /home/alanlemmonlab/Syteny_2_6_2024/Genomes/Pseudacris_feriarum/MyChicagoScaffolds_4_10_2024.FINAL.fasta ref_FINAL_4_26_2024.mmi > index1.out 2> index1.err
+
+        Map CLR to Fasta
+        /home/alanlemmonlab/TryArrow2/myzip/pool2/PseudacrisFeriarumGenomeAssemblyKevin/PacBioSmartLink/smrtlink/install/smrtlink-release_11.0.0.146107/bundles/smrttools/current/private/pacbio/pbmm2/binwrap/pbmm2 align ref_FINAL_4_26_2024.mmi myfiles.fofn CLRMAPPEDTOHIC_FINAL_4_26_2024.bam --sort -j 50 -J 4 -m 30G > align1.out 2> align1.err
+
+        Index bam File
+        Previous command crashes creating an index file for the bam file generated. This happenes because scaffold1 is > 512Mb ?!?!? ( it isn't). Fix this with -c option
+        samtools index -c -@ 50 CLRMAPPEDTOHIC_FINAL_4_26_2024.bam CLRMAPPEDTOHIC_FINAL_4_26_2024.bam.bai
+
+        GCPP with Arrow
+        /home/alanlemmonlab/TryArrow2/myzip/pool2/PseudacrisFeriarumGenomeAssemblyKevin/PacBioSmartLink/smrtlink/install/smrtlink-release_11.0.0.146107/bundles/smrttools/current/private/pacbio/gcpp/binwrap/gcpp -j 50 --algorithm=arrow -r /home/alanlemmonlab/Syteny_2_6_2024/Genomes/Pseudacris_feriarum/MyChicagoScaffolds_4_10_2024.FINAL.fasta -o variants_4_26_2024.gff,myConsensus_4_26_2024.fasta CLRMAPPEDTOHIC_FINAL_4_26_2024.bam > arrow1.out 2> arrow1.err
+
+        GCCP with Arrow only worked on a fraction of the genome before crashing. Each chromosome had to be run seperately in /home/alanlemmonlab/TryArrow3/TryManualParallel/ something like:
+        
+        samtools index -@ 20 /home/alanlemmonlab/TryArrow3/Chr3_WHeader_2.bam /home/alanlemmonlab/TryArrow3/Chr3_WHeader_2.bam.bai
+        /home/alanlemmonlab/TryArrow2/myzip/pool2/PseudacrisFeriarumGenomeAssemblyKevin/PacBioSmartLink/smrtlink/install/smrtlink-release_11.0.0.146107/bundles/smrttools/current/private/pacbio/gcpp/binwrap/gcpp -j 30 --algorithm=arrow -r /home/alanlemmonlab/TryArrow3/Chr3.fasta -o variants_Chr3.gff,myConsensus_Chr3.fasta /home/alanlemmonlab/TryArrow3/Chr3_WHeader_2.bam > arrow1.out 2> arrow1.err
+
+#Run Busco
+
+
+#Annotate Repeats 
+#Pauper in general folder /home/alanlemmonlab/TryRepeatMasker
+
+        1) annotate tandem repeats and regions of low complexity 
+        nohup /home/alanlemmonlab/TryRepeatMasker/RepeatMasker/RepeatMasker -pa 16 -a -e rmblast -dir /home/alanlemmonlab/TryRepeatMasker/Runs/RepeatMaskerSimple_7_30_2024/Simple -lib /home/alanlemmonlab/TryRepeatMasker/RepeatMasker/Libraries/Dfam.h5 -noint -xsmall -gff /home/alanlemmonlab/BackUpOldPferAssemblies/PolishedArrow_ManuallyCurated_3D-DNA_7_16_2024.fasta > r1.out 2> r1.e
+
+        2)annotate regions using online dfam3.8 library
+        nohup /home/alanlemmonlab/TryRepeatMasker/RepeatMasker_4.1.6/RepeatMasker/RepeatMasker -pa 32 -a -e rmblast -dir /home/alanlemmonlab/TryRepeatMasker/Runs/RepeatMaskerDfam38/InterDataBase_Uncurated_Curated -species "Amphibia" --uncurated -nolow -gff /home/alanlemmonlab/TryRepeatMasker/Runs/RepeatMaskerSimple_7_30_2024/Simple/PolishedArrow_ManuallyCurated_3D-DNA_7_16_2024.fasta.masked > r3.out 2> r3.err &
+
+        3)RepeatModeler to create a custom library then use RepeatMasker with that library
+        RepeatModeler
+        /home/alanlemmonlab/TryRepeatMasker/RepeatModeler/BuildDatabase -name Pfer /home/alanlemmonlab/BackUpOldPferAssemblies/PolishedArrow_ManuallyCurated_3D-DNA_7_16_2024.fasta > RMD.out 2> RMD.err
+        /home/alanlemmonlab/TryRepeatMasker/RepeatModeler/RepeatModeler -database Pfer -threads 30 -LTRStruct > RM1.out 2> RM1.err
+        RepeatMasker
+        nohup /home/alanlemmonlab/TryRepeatMasker/RepeatMasker_4.1.6/RepeatMasker/RepeatMasker -pa 32 -a -e rmblast -dir /home/alanlemmonlab/TryRepeatMasker/Runs/RepeatMasker_RepeatModelerLib_8_8_2024/RepeatModelerLib -lib /home/alanlemmonlab/TryRepeatMasker/Runs/RepeatModler_7_18_2024/Pfer-families.prefix.fa -nolow -gff /home/alanlemmonlab/TryRepeatMasker/Runs/RepeatMaskerDfam38/InterDataBase_Uncurated_Curated/PolishedArrow_ManuallyCurated_3D-DNA_7_16_2024.fasta.masked.masked > r1.out 2> r1.err &
+
+#Run Gene Annotation BRAKER3
+#179 in general folder /pool2/PseudacrisFeriarumGenomeAssemblyKevin/BRAKER/
+
+        1) start docker container
+        sudo docker run --user root --rm -it -v /pool2/PseudacrisFeriarumGenomeAssemblyKevin/BRAKER/BRAKER_Pseudacris_feriarum_Kevin/BRAKER3_Docker_Volume:/home/jovyan/hostdata teambraker/braker3:latest bash
+
+        2) enter docker container WhateverProcessIDIs needs to be the current id
+        sudo docker exec -it WhateverProcessIDIs bash
+
+        3) run braker
+        /opt/BRAKER/scripts/braker.pl --threads=64 --busco_lineage=vertebrata_odb10 --genome=/home/jovyan/hostdata/PolishedArrow_ManuallyCurated_3D-DNA_7_16_2024.fasta.softmask2 --prot_seq=/home/jovyan/hostdata/Vertebrata.fa --rnaseq_sets_ids=P_feriarum_Somatic_GCCAAT_L001,P_feriarum_Brain_ACAGTG_L001,P_feriarum_Eye_ATGTCA_L001,P_feriarum_Testis_CCGTCC_L001 --rnaseq_sets_dirs=/home/jovyan/hostdata/
+
+        4) copy output out of container
+
+#Run Busco on BRAKER proteins
+
+#create Syteny plots
+#Pauper in general folder /home/alanlemmonlab/Syteny_2_6_2024/
+
+        1) Run Buscos on all genomes
+
+        2) Configure files (additional work required to set up all these files) 
+        busco.fofn -> full_table.tsv file for all busco runs filtered for chromosomes
+        gaps.fofn -> empty for all
+        sequences.fofn -> lengths of sequences
+
+        3) Run chromsyn.R in the folder with the configuration files (latest: /home/alanlemmonlab/Syteny_2_6_2024/SynChroInput_2_27_2024/lst_fofn/Synteny_11_12_2024/)
+        Rscript /home/alanlemmonlab/Syteny_2_6_2024/chromsyn/chromsyn.R basefile=P_reg_run | tee P_reg.runlog
+
